@@ -59,6 +59,9 @@ class ShapeItem : public QGraphicsObject {
     ///          - 描边色变浅 + 改为虚线
     void setPreviewMode(bool enabled);
 
+    /// @brief 控制是否绘制 item 自带的选中虚线框。
+    void setSelectionDecorationVisible(bool visible);
+
     /// @brief 是否存在尚未写回 ShapeData 的 scene 位移。
     bool hasPendingMoveOffset() const;
 
@@ -93,6 +96,9 @@ class ShapeItem : public QGraphicsObject {
 
     /// @brief 是否处于"拖拽中预览"状态；为 true 时禁用选中 / 移动
     bool m_previewMode = false;
+
+    /// @brief true 时允许 item 自己绘制选中虚线框；Select 工具下由 overlay 接管。
+    bool m_selectionDecorationVisible = true;
 
     /// @brief 抑制"提交位移 → 触发 mouseReleaseEvent → 再提交"递归
     bool m_committingMove = false;

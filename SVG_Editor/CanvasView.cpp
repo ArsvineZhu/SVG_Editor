@@ -16,6 +16,7 @@
 #include "CanvasView.h"
 
 #include <QFile>
+#include <QApplication>
 #include <QGraphicsScene>
 #include <QImage>
 #include <QKeyEvent>
@@ -97,13 +98,17 @@ QRectF selectionBoundsForItems(const QList<ShapeItem*>& items) {
             continue;
         }
 
+        // 选中图形在拖动过程中会先暂存在 item->pos()，这里必须取 sceneTransform 后的场景 bbox，
+        // 否则 overlay 会停在旧位置，与图形本体分裂成两个框。
+        const QRectF itemBounds = item->sceneTransform().map(item->shape()).boundingRect();
+
         if (first) {
-            bounds = item->shape().boundingRect();
+            bounds = itemBounds;
             first = false;
             continue;
         }
 
-        bounds = bounds.united(item->shape().boundingRect());
+        bounds = bounds.united(itemBounds);
     }
 
     return bounds.normalized();
@@ -220,6 +225,9 @@ void CanvasView::setTool(Tool tool) {
     m_tool = tool;
     // 工具切换影响覆盖层可见性：非 Select 时不能显示手柄
     setDragMode(tool == Tool::Select ? QGraphicsView::RubberBandDrag : QGraphicsView::NoDrag);
+    m_selectionMoveCandidate = false;
+    m_selectionMoveActive = false;
+    updateSelectionDecorations();
     updateSelectionOverlay();
 
     emit statusMessageChanged(tool == Tool::Select
@@ -413,6 +421,8 @@ int CanvasView::selectedShapeCount() const { return static_cast<int>(selectedSha
 
 void CanvasView::mousePressEvent(QMouseEvent* event) {
     const QPointF scenePoint = mapToScene(event->pos());
+    m_selectionMoveCandidate = false;
+    m_selectionMoveActive = false;
 
     // 优先：Select 工具下点中手柄 → 进入缩放 / 旋转会话
     if (m_tool == Tool::Select && event->button() == Qt::LeftButton && m_selectionOverlay != nullptr &&
@@ -450,6 +460,13 @@ void CanvasView::mousePressEvent(QMouseEvent* event) {
         }
     }
 
+    if (m_tool == Tool::Select && event->button() == Qt::LeftButton) {
+        if (qgraphicsitem_cast<ShapeItem*>(itemAt(event->pos())) != nullptr) {
+            m_selectionMoveCandidate = true;
+            m_selectionMovePressViewPos = event->pos();
+        }
+    }
+
     QGraphicsView::mousePressEvent(event);
 }
 
@@ -474,6 +491,21 @@ void CanvasView::mouseMoveEvent(QMouseEvent* event) {
     }
 
     QGraphicsView::mouseMoveEvent(event);
+
+    if (m_tool != Tool::Select || !event->buttons().testFlag(Qt::LeftButton)) {
+        return;
+    }
+
+    if (m_selectionMoveCandidate && !m_selectionMoveActive &&
+        (event->pos() - m_selectionMovePressViewPos).manhattanLength() >= QApplication::startDragDistance()) {
+        m_selectionMoveActive = true;
+    }
+
+    if (m_selectionMoveActive) {
+        // 拖动已选图形时，由 overlay 独占绘制一个无手柄的当前选区矩形，
+        // 避免和 ShapeItem / 旧 bbox 叠出双框。
+        updateSelectionOverlay();
+    }
 }
 
 void CanvasView::mouseReleaseEvent(QMouseEvent* event) {
@@ -493,6 +525,10 @@ void CanvasView::mouseReleaseEvent(QMouseEvent* event) {
 
     // Select 工具下用框选 / 拖动平移后：把 ShapeItem 内部缓存的「pending 偏移」真正落到 ShapeData
     if (m_tool == Tool::Select && event->button() == Qt::LeftButton) {
+        const bool selectionWasMoving = m_selectionMoveActive;
+        m_selectionMoveCandidate = false;
+        m_selectionMoveActive = false;
+
         bool committed = false;
         for (ShapeItem* item : selectedShapeItems()) {
             if (item != nullptr && item->hasPendingMoveOffset()) {
@@ -500,7 +536,7 @@ void CanvasView::mouseReleaseEvent(QMouseEvent* event) {
                 committed = true;
             }
         }
-        if (committed) {
+        if (committed || selectionWasMoving) {
             refreshSelectionNotification();
         }
     }
@@ -585,6 +621,7 @@ void CanvasView::addShape(const ShapeData& data, bool selectNewItem) {
 
     // unique_ptr 释放所有权给 Qt parent 机制（scene 接管）
     ShapeItem* rawItem = item.release();
+    rawItem->setSelectionDecorationVisible(m_tool != Tool::Select);
     m_scene->addItem(rawItem);
     // 同步 z 计数器为新图形的 z（≥），确保 nextZValue 不会回退
     m_zCounter = std::max(m_zCounter, data.zValue);
@@ -765,6 +802,7 @@ ShapeStyle CanvasView::currentStyleFor(ShapeType type) const {
 
 void CanvasView::refreshSelectionNotification() {
     const QList<ShapeItem*> items = selectedShapeItems();
+    updateSelectionDecorations();
     updateSelectionOverlay();
     // 单选时 primaryItem 非空；多选 / 无选时 primaryItem = nullptr，count 表达具体数量
     emit selectionStateChanged(items.size() == 1 ? items.first() : nullptr, static_cast<int>(items.size()));
@@ -787,7 +825,17 @@ void CanvasView::updateSelectionOverlay() {
         return;
     }
 
+    m_selectionOverlay->setHandlesVisible(!m_selectionMoveActive);
     m_selectionOverlay->setSelectionBounds(selectionBoundsForItems(items));
+}
+
+void CanvasView::updateSelectionDecorations() {
+    const bool showItemSelectionDecoration = m_tool != Tool::Select;
+    for (QGraphicsItem* graphicsItem : m_scene->items()) {
+        if (auto* shapeItem = qgraphicsitem_cast<ShapeItem*>(graphicsItem)) {
+            shapeItem->setSelectionDecorationVisible(showItemSelectionDecoration);
+        }
+    }
 }
 
 void CanvasView::beginTransformSession(SelectionTransformOverlayItem::Handle handle, const QPointF& scenePoint) {

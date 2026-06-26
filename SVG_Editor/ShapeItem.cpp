@@ -76,8 +76,8 @@ void ShapeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidge
 
     painter->drawPath(buildPath());
 
-    // 选中时画蓝色虚线选框；预览模式不画
-    if (isSelected() && !m_previewMode) {
+    // 非 Select 工具下仍保留 item 级选中框；Select 工具由 overlay 接管
+    if (isSelected() && !m_previewMode && m_selectionDecorationVisible) {
         QPen selectionPen(QColor("#2d7ff9"));
         selectionPen.setStyle(Qt::DashLine);
         // cosmetic = true 让线宽在所有缩放等级下都保持 1 像素
@@ -106,6 +106,15 @@ void ShapeItem::setPreviewMode(bool enabled) {
     // 预览时不允许选中和拖动，避免破坏"正在绘制"的视觉状态
     setFlag(QGraphicsItem::ItemIsSelectable, !enabled);
     setFlag(QGraphicsItem::ItemIsMovable, !enabled);
+    update();
+}
+
+void ShapeItem::setSelectionDecorationVisible(bool visible) {
+    if (m_selectionDecorationVisible == visible) {
+        return;
+    }
+
+    m_selectionDecorationVisible = visible;
     update();
 }
 

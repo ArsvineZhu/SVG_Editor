@@ -46,13 +46,17 @@ QRectF SelectionTransformOverlayItem::boundingRect() const {
         return QRectF();
     }
 
+    if (!m_handlesVisible) {
+        return m_bounds.adjusted(-4.0, -4.0, 4.0, 4.0);
+    }
+
     // 留出旋转手柄上方的空间 (-40 顶部) 与四角手柄外延 (-20 水平/底部)
     return m_bounds.adjusted(-20.0, -40.0, 20.0, 20.0);
 }
 
 QPainterPath SelectionTransformOverlayItem::shape() const {
     QPainterPath path;
-    if (!hasBounds()) {
+    if (!hasBounds() || !m_handlesVisible) {
         return path;
     }
 
@@ -80,6 +84,12 @@ void SelectionTransformOverlayItem::paint(QPainter* painter, const QStyleOptionG
     painter->setPen(framePen);
     painter->setBrush(Qt::NoBrush);
     painter->drawRect(m_bounds);
+
+    if (!m_handlesVisible) {
+        painter->restore();
+        return;
+    }
+
     // 2) 选区上沿中点 → 旋转手柄圆心的连接线
     painter->drawLine(QPointF(m_bounds.center().x(), m_bounds.top()), rotateHandleCenter());
 
@@ -112,8 +122,20 @@ void SelectionTransformOverlayItem::clearSelectionBounds() {
 
 QRectF SelectionTransformOverlayItem::selectionBounds() const { return m_bounds; }
 
+void SelectionTransformOverlayItem::setHandlesVisible(bool visible) {
+    if (m_handlesVisible == visible) {
+        return;
+    }
+
+    prepareGeometryChange();
+    m_handlesVisible = visible;
+    update();
+}
+
+bool SelectionTransformOverlayItem::handlesVisible() const { return m_handlesVisible; }
+
 SelectionTransformOverlayItem::Handle SelectionTransformOverlayItem::handleAt(const QPointF& scenePoint) const {
-    if (!hasBounds()) {
+    if (!hasBounds() || !m_handlesVisible) {
         return Handle::None;
     }
 

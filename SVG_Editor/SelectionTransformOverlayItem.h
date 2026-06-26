@@ -73,6 +73,12 @@ class SelectionTransformOverlayItem : public QGraphicsObject {
     /// @brief 当前选区矩形（可能为空矩形）。
     QRectF selectionBounds() const;
 
+    /// @brief 控制是否显示缩放锚点与旋转手柄。
+    void setHandlesVisible(bool visible);
+
+    /// @brief 当前是否显示缩放锚点与旋转手柄。
+    bool handlesVisible() const;
+
     /// @brief 命中测试：返回给定场景坐标点上的手柄。
     /// @param scenePoint  场景坐标
     /// @return            命中的手柄；若未命中任何手柄或选区为空，返回 `Handle::None`
@@ -90,4 +96,7 @@ class SelectionTransformOverlayItem : public QGraphicsObject {
 
     /// @brief 当前选区矩形（场景坐标系）。空矩形 = 无选区。
     QRectF m_bounds;
+
+    /// @brief true 时绘制四角锚点和旋转手柄；false 时仅绘制虚线矩形。
+    bool m_handlesVisible = true;
 };

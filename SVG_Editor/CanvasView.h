@@ -172,6 +172,9 @@ class CanvasView : public QGraphicsView {
     /// @brief 刷新选择变换覆盖层。
     void updateSelectionOverlay();
 
+    /// @brief 同步 ShapeItem 自带选中框的显示策略。
+    void updateSelectionDecorations();
+
     /// @brief 命中锚点后初始化缩放/旋转会话。
     void beginTransformSession(SelectionTransformOverlayItem::Handle handle, const QPointF& scenePoint);
 
@@ -252,4 +255,13 @@ class CanvasView : public QGraphicsView {
 
     /// @brief 当前缩放/旋转会话状态
     TransformSession m_transformSession;
+
+    /// @brief Select 工具下，按下到某个图形上后等待是否进入拖动。
+    bool m_selectionMoveCandidate = false;
+
+    /// @brief 当前是否处于拖动已选图形的可视反馈阶段。
+    bool m_selectionMoveActive = false;
+
+    /// @brief 记录按下时的视口坐标，用于判定是否越过拖动阈值。
+    QPoint m_selectionMovePressViewPos;
 };
