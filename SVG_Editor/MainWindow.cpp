@@ -1,3 +1,13 @@
+// =====================================================================
+// MainWindow.cpp
+// ---------------------------------------------------------------------
+// @brief MainWindow 的实现
+// @details 启动顺序（构造时）：
+//          loadLanguage() → setupUi → setupActions → setupToolbar → setupMenus
+//          → connectSignals → setLanguage(m_language) → 状态栏 "Ready"
+// @layer   ui
+// =====================================================================
+
 #include "MainWindow.h"
 
 #include <QAction>
@@ -19,10 +29,12 @@
 
 namespace {
 
+/// @brief 二选一返回字符串。
 QString textForLanguage(AppLanguage language, const QString& english, const QString& chinese) {
     return language == AppLanguage::SimplifiedChinese ? chinese : english;
 }
 
+/// @brief 工具枚举的本地化标签（与 shapeDisplayName 类似，但语言切换时是 QAction 文本）。
 QString toolLabel(CanvasView::Tool tool, AppLanguage language) {
     switch (tool) {
     case CanvasView::Tool::Select:
@@ -48,12 +60,19 @@ QString toolLabel(CanvasView::Tool tool, AppLanguage language) {
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+    // 1) 读取上次保存的语言（默认 zh-CN）
     m_language = loadLanguage();
+    // 2) 构造 UI 子模块与 dock
     setupUi();
+    // 3) 创建所有 QAction 与 ActionGroup（含快捷键）
     setupActions();
+    // 4) 工具栏（先于菜单：工具按钮的 checked 状态需要 ActionGroup 已有成员）
     setupToolbar();
+    // 5) 菜单栏
     setupMenus();
+    // 6) 桥接所有信号槽
     connectSignals();
+    // 7) 通知所有子模块切换语言并刷新自身
     setLanguage(m_language);
     statusBar()->showMessage(textForLanguage(m_language, "Ready", "就绪"));
 }
@@ -61,6 +80,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 AppLanguage MainWindow::loadLanguage() const {
     const QSettings settings;
     const QString value = settings.value("ui/language", "zh-CN").toString();
+    // "en" 视为英文；其他（含缺失、zh-CN、其他）一律回退到简体中文
     return value == "en" ? AppLanguage::English : AppLanguage::SimplifiedChinese;
 }
 
@@ -73,10 +93,12 @@ void MainWindow::setLanguage(AppLanguage language) {
     m_language = language;
     saveLanguage();
 
+    // 通知子模块
     m_canvasView->setLanguage(language);
     m_propertyPanel->setLanguage(language);
     m_tutorialDialog->setLanguage(language);
 
+    // 同步语言菜单的勾选态
     if (m_englishAction != nullptr) {
         m_englishAction->setChecked(language == AppLanguage::English);
     }
@@ -97,6 +119,7 @@ void MainWindow::setupUi() {
 
     m_propertyPanel = new PropertyPanel(this);
     m_propertyDock = new QDockWidget(this);
+    // 属性面板允许左右停靠
     m_propertyDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     m_propertyDock->setWidget(m_propertyPanel);
     addDockWidget(Qt::RightDockWidgetArea, m_propertyDock);
@@ -118,6 +141,7 @@ void MainWindow::setupActions() {
     m_englishAction = new QAction(this);
     m_simplifiedChineseAction = new QAction(this);
 
+    // 用 Qt 标准快捷键（平台自适应：macOS 走 Cmd，其余走 Ctrl）
     m_openAction->setShortcut(QKeySequence::Open);
     m_saveAction->setShortcut(QKeySequence::Save);
     m_saveAsAction->setShortcut(QKeySequence::SaveAs);
@@ -152,11 +176,13 @@ void MainWindow::setupMenus() {
     m_editMenu->addAction(m_deleteAction);
     m_editMenu->addAction(m_clearAction);
 
+    // Tools 菜单从工具 ActionGroup 批量添加（顺序由 createToolAction 调用顺序决定）
     m_toolMenu = menuBar()->addMenu(QString());
     for (QAction* action : m_toolActionGroup->actions()) {
         m_toolMenu->addAction(action);
     }
 
+    // Tutorial 菜单标题在英文 / 中文下都保留 "Tutorial"（与 HTML 手册保持一致）
     m_tutorialMenu = menuBar()->addMenu("Tutorial");
     m_tutorialMenu->addAction(m_showTutorialAction);
     m_tutorialMenu->addSeparator();
@@ -169,6 +195,7 @@ void MainWindow::setupToolbar() {
     m_toolBar = addToolBar(QString());
     m_toolBar->setMovable(false);
 
+    // 8 个工具按钮（顺序与 Tools 菜单一致）
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Select));
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Point));
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Line));
@@ -178,6 +205,7 @@ void MainWindow::setupToolbar() {
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Rectangle));
     m_toolBar->addAction(createToolAction(CanvasView::Tool::Polygon));
     m_toolBar->addSeparator();
+    // 常用动作快捷入口
     m_toolBar->addAction(m_deleteAction);
     m_toolBar->addAction(m_copyAction);
     m_toolBar->addAction(m_pasteAction);
@@ -185,27 +213,35 @@ void MainWindow::setupToolbar() {
     m_toolBar->addAction(m_saveAction);
     m_toolBar->addAction(m_clearAction);
 
+    // 默认选中 Select 工具（ActionGroup 内的第一个）
     if (!m_toolActionGroup->actions().isEmpty()) {
         m_toolActionGroup->actions().first()->setChecked(true);
     }
 }
 
 void MainWindow::connectSignals() {
+    // File 菜单
     connect(m_openAction, &QAction::triggered, this, &MainWindow::openDocument);
     connect(m_saveAction, &QAction::triggered, this, [this]() { saveDocument(); });
     connect(m_saveAsAction, &QAction::triggered, this, [this]() { saveDocumentAs(); });
     connect(m_exportAction, &QAction::triggered, this, &MainWindow::exportImage);
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
+
+    // Tutorial 菜单
     connect(m_showTutorialAction, &QAction::triggered, this, &MainWindow::showTutorial);
+
+    // Edit 菜单（直接桥到 CanvasView）
     connect(m_deleteAction, &QAction::triggered, m_canvasView, &CanvasView::deleteSelectedItem);
     connect(m_copyAction, &QAction::triggered, m_canvasView, &CanvasView::copySelectedItem);
     connect(m_pasteAction, &QAction::triggered, m_canvasView, &CanvasView::pasteCopiedItem);
+    // Clear Canvas 还需要清空当前文件路径和更新窗口标题，所以在 MainWindow 内联处理
     connect(m_clearAction, &QAction::triggered, this, [this]() {
         m_canvasView->clearCanvas();
         m_currentFilePath.clear();
         updateWindowTitle();
     });
 
+    // 画布 → 属性面板 / 状态栏
     connect(m_canvasView, &CanvasView::selectedShapeChanged, this, [this](ShapeItem* item) {
         if (item != nullptr) {
             m_propertyPanel->setShapeData(item->shapeData());
@@ -217,7 +253,10 @@ void MainWindow::connectSignals() {
     connect(m_canvasView, &CanvasView::statusMessageChanged, this,
             [this](const QString& message) { statusBar()->showMessage(message, 2500); });
 
+    // 属性面板 → 画布（回写修改）
     connect(m_propertyPanel, &PropertyPanel::shapeEdited, m_canvasView, &CanvasView::updateSelectedShape);
+
+    // 语言菜单
     connect(m_englishAction, &QAction::triggered, this, [this]() { setLanguage(AppLanguage::English); });
     connect(m_simplifiedChineseAction, &QAction::triggered, this,
             [this]() { setLanguage(AppLanguage::SimplifiedChinese); });
@@ -227,6 +266,7 @@ void MainWindow::retranslateUi() {
     m_fileMenu->setTitle(textForLanguage(m_language, "File", "文件"));
     m_editMenu->setTitle(textForLanguage(m_language, "Edit", "编辑"));
     m_toolMenu->setTitle(textForLanguage(m_language, "Tools", "工具"));
+    // Tutorial 标题保持原样（与 HTML 手册标题一致）
     m_tutorialMenu->setTitle("Tutorial");
     m_languageMenu->setTitle(textForLanguage(m_language, "Language", "语言"));
 
@@ -243,6 +283,7 @@ void MainWindow::retranslateUi() {
     m_englishAction->setText("English");
     m_simplifiedChineseAction->setText(QString::fromUtf8("简体中文"));
 
+    // 工具按钮文本（按 QAction::data() 存取的 Tool 枚举值回查）
     for (QAction* action : m_toolActionGroup->actions()) {
         const QVariant data = action->data();
         if (data.isValid()) {
@@ -269,6 +310,7 @@ void MainWindow::showTutorial() {
 QAction* MainWindow::createToolAction(CanvasView::Tool tool) {
     QAction* action = new QAction(this);
     action->setCheckable(true);
+    // 把 Tool 枚举值存到 action->data()，供 retranslateUi 时回查
     action->setData(static_cast<int>(tool));
     m_toolActionGroup->addAction(action);
 
@@ -292,6 +334,7 @@ bool MainWindow::saveToPath(const QString& filePath) {
 
 bool MainWindow::saveDocument() {
     if (m_currentFilePath.isEmpty()) {
+        // 还没保存过 → 走另存为
         return saveDocumentAs();
     }
 
@@ -305,6 +348,7 @@ bool MainWindow::saveDocumentAs() {
         textForLanguage(m_language, "Vector JSON (*.vgjson *.json)", "矢量 JSON 文件 (*.vgjson *.json)"));
 
     if (filePath.isEmpty()) {
+        // 用户取消
         return false;
     }
 

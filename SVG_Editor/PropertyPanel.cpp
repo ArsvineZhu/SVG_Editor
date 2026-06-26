@@ -1,3 +1,14 @@
+// =====================================================================
+// PropertyPanel.cpp
+// ---------------------------------------------------------------------
+// @brief PropertyPanel 的实现
+// @details 本文件实现"无 Apply/Cancel 的实时编辑器"：
+//          - 任意 valueChanged / 按钮点击都会立即构造完整 ShapeData 并 emit；
+//          - 程序侧更新（setShapeData / rebuildLineStyleCombo）通过
+//            m_updatingWidgets 标志位抑制 emit 反馈。
+// @layer   ui
+// =====================================================================
+
 #include "PropertyPanel.h"
 
 #include <QCheckBox>
@@ -11,10 +22,12 @@
 
 namespace {
 
+/// @brief 二选一返回字符串（与 CanvasView/MainWindow 中的同名工具一致）。
 QString textForLanguage(AppLanguage language, const QString& english, const QString& chinese) {
     return language == AppLanguage::SimplifiedChinese ? chinese : english;
 }
 
+/// @brief 在 QFormLayout 中按 field 找到其左侧的 QLabel 并设置文本。
 void setFormLabelText(QFormLayout* layout, QWidget* field, const QString& text) {
     if (layout == nullptr || field == nullptr) {
         return;
@@ -26,6 +39,7 @@ void setFormLabelText(QFormLayout* layout, QWidget* field, const QString& text) 
     }
 }
 
+/// @brief 把颜色渲染为 QSS 字符串，作为颜色按钮的背景。
 QString colorButtonStyle(const QColor& color) {
     return QString("background:%1; border:1px solid #909090; min-height:24px;").arg(color.name(QColor::HexArgb));
 }
@@ -34,6 +48,7 @@ QString colorButtonStyle(const QColor& color) {
 
 PropertyPanel::PropertyPanel(QWidget* parent) : QWidget(parent) {
     setupUi();
+    // 构造完毕先进入"无选中"态，避免显示空数据
     clearSelection();
 }
 
@@ -50,11 +65,13 @@ void PropertyPanel::clearSelection() {
     m_hasSelection = false;
     updateSelectionTexts();
 
+    // 隐藏所有几何编辑字段
     for (int index = 0; index < 6; ++index) {
         m_geometryLabels[index]->hide();
         m_geometryEdits[index]->hide();
     }
 
+    // 禁用所有可交互控件
     m_strokeColorButton->setEnabled(false);
     m_fillColorButton->setEnabled(false);
     m_lineWidthSpin->setEnabled(false);
@@ -64,6 +81,7 @@ void PropertyPanel::clearSelection() {
 }
 
 void PropertyPanel::setShapeData(const ShapeData& data) {
+    // 关键：进入"程序更新中"状态，避免 setValue 触发的 valueChanged 形成回环
     m_updatingWidgets = true;
     m_currentData = normalizedShapeData(data);
     m_hasSelection = true;
@@ -71,6 +89,7 @@ void PropertyPanel::setShapeData(const ShapeData& data) {
     updateSelectionTexts();
     updateGeometryControls();
 
+    // 启用样式相关控件；填充相关控件还要看 type 是否支持
     m_lineWidthSpin->setEnabled(true);
     m_lineStyleCombo->setEnabled(true);
     m_strokeColorButton->setEnabled(true);
@@ -106,6 +125,7 @@ void PropertyPanel::setupUi() {
     m_formLayout->setFormAlignment(Qt::AlignTop);
     m_formLayout->setSpacing(8);
 
+    // 创建 6 个几何字段；其可见性由 updateGeometryControls 决定
     for (int index = 0; index < 6; ++index) {
         m_geometryLabels[index] = new QLabel(this);
         m_geometryEdits[index] = new QDoubleSpinBox(this);
@@ -114,6 +134,7 @@ void PropertyPanel::setupUi() {
         m_geometryEdits[index]->setSingleStep(1.0);
         m_formLayout->addRow(m_geometryLabels[index], m_geometryEdits[index]);
 
+        // 任意字段变化都触发重新组装 + emit
         connect(m_geometryEdits[index], QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
                 [this](double) { emitEditedShape(); });
     }
@@ -165,6 +186,7 @@ void PropertyPanel::setupUi() {
         if (m_updatingWidgets || !m_hasSelection) {
             return;
         }
+        // 即使用户勾选，不支持填充的 type 也会被强制关闭
         m_currentData.style.fillEnabled = shapeSupportsFill(m_currentData.type) && state == Qt::Checked;
         updateButtons();
         emit shapeEdited(m_currentData);
@@ -195,6 +217,7 @@ void PropertyPanel::setupUi() {
 }
 
 void PropertyPanel::updateButtons() {
+    // 把当前颜色同步到按钮的 QSS，方便用户直接看到选中色
     m_strokeColorButton->setStyleSheet(colorButtonStyle(m_currentData.style.strokeColor));
     m_fillColorButton->setStyleSheet(colorButtonStyle(m_currentData.style.fillColor));
     m_fillColorButton->setEnabled(m_hasSelection && shapeSupportsFill(m_currentData.type));
@@ -208,6 +231,7 @@ void PropertyPanel::retranslateUi() {
     m_fillColorButton->setText(textForLanguage(m_language, "Fill Color", "填充颜色"));
     m_fillEnabledCheck->setText(textForLanguage(m_language, "Enable Fill", "启用填充"));
 
+    // 表单左侧标签需要单独刷新
     if (m_formLayout != nullptr) {
         setFormLabelText(m_formLayout, m_strokeColorButton, textForLanguage(m_language, "Stroke", "描边"));
         setFormLabelText(m_formLayout, m_lineWidthSpin, textForLanguage(m_language, "Line Width", "线宽"));
@@ -231,6 +255,7 @@ void PropertyPanel::updateSelectionTexts() {
 }
 
 void PropertyPanel::rebuildLineStyleCombo() {
+    // 先记下当前选中值（用 data 而非 text，因为 text 跟语言相关）
     const QVariant currentData = m_lineStyleCombo->currentData();
 
     m_updatingWidgets = true;
@@ -240,6 +265,7 @@ void PropertyPanel::rebuildLineStyleCombo() {
     m_lineStyleCombo->addItem(penStyleDisplayName(Qt::DotLine, m_language), static_cast<int>(Qt::DotLine));
     m_lineStyleCombo->addItem(penStyleDisplayName(Qt::DashDotLine, m_language), static_cast<int>(Qt::DashDotLine));
 
+    // 恢复原选中
     const int index = m_lineStyleCombo->findData(currentData);
     if (index >= 0) {
         m_lineStyleCombo->setCurrentIndex(index);
@@ -248,11 +274,13 @@ void PropertyPanel::rebuildLineStyleCombo() {
 }
 
 void PropertyPanel::updateGeometryControls() {
+    // 先全部隐藏，再按 type 决定显示哪些字段
     for (int index = 0; index < 6; ++index) {
         m_geometryLabels[index]->hide();
         m_geometryEdits[index]->hide();
     }
 
+    // 局部辅助：显示一个字段并设置当前值
     auto showField = [this](int index, const QString& label, double value) {
         m_geometryLabels[index]->setText(label);
         m_geometryEdits[index]->setValue(value);
@@ -260,18 +288,21 @@ void PropertyPanel::updateGeometryControls() {
         m_geometryEdits[index]->show();
     };
 
+    // 局部辅助：单独设置某个字段的取值范围（默认 -100000~100000）
     auto setFieldRange = [this](int index, double minimum, double maximum) {
         m_geometryEdits[index]->setRange(minimum, maximum);
     };
 
     switch (m_currentData.type) {
     case ShapeType::Point:
+        // Point：单点 → x/y
         if (!m_currentData.points.isEmpty()) {
             showField(0, "x", m_currentData.points.first().x());
             showField(1, "y", m_currentData.points.first().y());
         }
         break;
     case ShapeType::Line:
+        // Line：起终点 → x1/y1/x2/y2
         if (m_currentData.points.size() >= 2) {
             showField(0, "x1", m_currentData.points.at(0).x());
             showField(1, "y1", m_currentData.points.at(0).y());
@@ -281,18 +312,21 @@ void PropertyPanel::updateGeometryControls() {
         break;
     case ShapeType::Polyline:
     case ShapeType::Polygon: {
+        // Polyline/Polygon 当前不支持逐顶点编辑，仅允许整体平移 → 只显示 bbox 的 x/y
         const QRectF bounds = pointsBoundingRect(m_currentData.points);
         showField(0, "x", bounds.x());
         showField(1, "y", bounds.y());
         break;
     }
     case ShapeType::Circle:
+        // Circle：cx/cy/r，r 范围 [0, 100000]
         showField(0, "cx", m_currentData.rect.center().x());
         showField(1, "cy", m_currentData.rect.center().y());
         setFieldRange(2, 0.0, 100000.0);
         showField(2, "r", m_currentData.rect.width() / 2.0);
         break;
     case ShapeType::Ellipse:
+        // Ellipse：cx/cy/rx/ry，半轴非负
         showField(0, "cx", m_currentData.rect.center().x());
         showField(1, "cy", m_currentData.rect.center().y());
         setFieldRange(2, 0.0, 100000.0);
@@ -301,6 +335,7 @@ void PropertyPanel::updateGeometryControls() {
         showField(3, "ry", m_currentData.rect.height() / 2.0);
         break;
     case ShapeType::Rectangle:
+        // Rectangle：x/y/width/height，宽高非负
         showField(0, "x", m_currentData.rect.x());
         showField(1, "y", m_currentData.rect.y());
         setFieldRange(2, 0.0, 100000.0);
@@ -331,6 +366,7 @@ void PropertyPanel::emitEditedShape() {
         break;
     case ShapeType::Polyline:
     case ShapeType::Polygon: {
+        // 把 bbox 起点平移到新位置（保持宽高不变）
         const QRectF currentBounds = pointsBoundingRect(data.points);
         const QPointF delta(m_geometryEdits[0]->value() - currentBounds.x(),
                             m_geometryEdits[1]->value() - currentBounds.y());
@@ -338,12 +374,14 @@ void PropertyPanel::emitEditedShape() {
         break;
     }
     case ShapeType::Circle: {
+        // 用 center + r 重建正方形外接框
         const qreal radius = m_geometryEdits[2]->value();
         const QPointF center(m_geometryEdits[0]->value(), m_geometryEdits[1]->value());
         data.rect = QRectF(center.x() - radius, center.y() - radius, radius * 2.0, radius * 2.0);
         break;
     }
     case ShapeType::Ellipse: {
+        // 用 center + 半轴重建
         const qreal rx = m_geometryEdits[2]->value();
         const qreal ry = m_geometryEdits[3]->value();
         const QPointF center(m_geometryEdits[0]->value(), m_geometryEdits[1]->value());
@@ -351,6 +389,7 @@ void PropertyPanel::emitEditedShape() {
         break;
     }
     case ShapeType::Rectangle:
+        // 直接 4 个标量
         data.rect = QRectF(m_geometryEdits[0]->value(), m_geometryEdits[1]->value(), m_geometryEdits[2]->value(),
                            m_geometryEdits[3]->value());
         break;

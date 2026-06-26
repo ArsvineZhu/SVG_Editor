@@ -1,3 +1,12 @@
+// =====================================================================
+// TutorialDialog.cpp
+// ---------------------------------------------------------------------
+// @brief TutorialDialog 的实现
+// @details buildManualHtml() 内部包含大段 HTML 字符串（中英两版），
+//          它们是用户文档而非代码逻辑，因此本文件不逐行注释其内容。
+// @layer   ui
+// =====================================================================
+
 #include "TutorialDialog.h"
 
 #include <QPushButton>
@@ -6,6 +15,7 @@
 
 namespace {
 
+/// @brief 二选一返回字符串。
 QString textForLanguage(AppLanguage language, const QString& english, const QString& chinese) {
     return language == AppLanguage::SimplifiedChinese ? chinese : english;
 }
@@ -35,6 +45,7 @@ void TutorialDialog::setupUi() {
     layout->setSpacing(12);
 
     m_browser = new QTextBrowser(this);
+    // 关闭外链跳转，避免用户点击 HTML 中的外部链接被强制打开浏览器
     m_browser->setOpenExternalLinks(false);
     layout->addWidget(m_browser, 1);
 
@@ -49,6 +60,10 @@ void TutorialDialog::retranslateUi() {
     m_closeButton->setText(textForLanguage(m_language, "Close", "关闭"));
 }
 
+/// @brief 构造当前语言版本的手册 HTML。内容覆盖：
+///        1) 界面布局、2) 绘图工具、3) Polyline/Polygon 详解、
+///        4) 选择与编辑、5) 文件与图片、6) 复制粘贴删除、7) 快捷键、
+///        8) 语言切换、9) 当前实现边界。
 QString TutorialDialog::buildManualHtml() const {
     if (m_language == AppLanguage::SimplifiedChinese) {
         return QStringLiteral(R"(

@@ -1,8 +1,23 @@
+// =====================================================================
+// AppLanguage.h
+// ---------------------------------------------------------------------
+// @brief   应用界面语言枚举（i18n 切换的最小数据单元）
+// @details 该枚举是项目内 i18n 切换的唯一语言标识；当前仅支持英文与简体中文。
+//          实际界面文本由各 UI 模块持有的 `textForLanguage(language, "en", "zh")`
+//          模式按需产出，不依赖 Qt Linguist / .ts 翻译文件。
+// @layer   core（无 UI 依赖，可被任意层引用）
+// @warning 枚举值的顺序即为序列化时写入的"语言代码序号"，
+//          若新增语言请追加到末尾而非插队，避免 JSON / 配置中既有索引失效。
+// =====================================================================
+
 #pragma once
 
 #include <cstdint>
 
+/// @brief 应用当前界面语言。
+/// @note   目前仅有 English 与 SimplifiedChinese 两种；
+///         字段宽度 8 bit 仅作预留，便于未来扩展到 256 种以内的语言集合。
 enum class AppLanguage : std::uint8_t {
-    English,
-    SimplifiedChinese,
+    English,           ///< 英文（默认）
+    SimplifiedChinese, ///< 简体中文
 };
